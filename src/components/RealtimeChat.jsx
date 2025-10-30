@@ -27,25 +27,48 @@ function RealtimeChat() {
     // Lade vorhandene Nachrichten
     loadMessages()
 
-    // Erstelle Realtime Channel
+    // Erstelle Realtime Channel mit Postgres Changes
     const channel = supabase
-      .channel('realtime-chat')
-      .on('broadcast', { event: 'message' }, (payload) => {
-        console.log('📨 Neue Nachricht empfangen:', payload)
-        const newMessage = payload.payload
-        setMessages((prev) => {
-          // Vermeide Duplikate
-          if (prev.some(msg => msg.id === newMessage.id)) {
-            return prev
-          }
-          return [...prev, newMessage]
-        })
-      })
+      .channel('messages-db-changes')
+      .on(
+        'postgres_changes',
+        {
+          event: 'INSERT',
+          schema: 'public',
+          table: 'messages'
+        },
+        (payload) => {
+          console.log('📨 Neue Nachricht (INSERT):', payload)
+          const newMessage = payload.new
+          
+          setMessages((prev) => {
+            // Vermeide Duplikate
+            if (prev.some(msg => msg.id === newMessage.id)) {
+              return prev
+            }
+            return [...prev, newMessage]
+          })
+        }
+      )
+      .on(
+        'postgres_changes',
+        {
+          event: 'DELETE',
+          schema: 'public',
+          table: 'messages'
+        },
+        (payload) => {
+          console.log('🗑️ Nachricht gelöscht:', payload)
+          const deletedId = payload.old.id
+          
+          setMessages((prev) => prev.filter(msg => msg.id !== deletedId))
+        }
+      )
       .subscribe((status) => {
         console.log('📡 Channel Status:', status)
         if (status === 'SUBSCRIBED') {
           setIsConnected(true)
-          console.log('✅ Mit Supabase Realtime verbunden!')
+          console.log('✅ Mit Supabase Realtime (Postgres Changes) verbunden!')
         } else if (status === 'CLOSED' || status === 'CHANNEL_ERROR') {
           setIsConnected(false)
           console.log('❌ Verbindung getrennt')
@@ -100,33 +123,21 @@ function RealtimeChat() {
     }
 
     try {
-      // Speichere in Datenbank (optional)
-      const { error: dbError } = await supabase
+      // Speichere in Datenbank - Realtime wird automatisch durch postgres_changes getriggert
+      const { data, error: dbError } = await supabase
         .from('messages')
         .insert([newMessage])
+        .select()
 
       if (dbError) {
-        console.warn('⚠️ Konnte Nachricht nicht speichern:', dbError.message)
-        // Fahre trotzdem fort mit Broadcast
-      }
-
-      // Sende via Realtime Broadcast
-      const { error: broadcastError } = await channelRef.current.send({
-        type: 'broadcast',
-        event: 'message',
-        payload: newMessage
-      })
-
-      if (broadcastError) {
-        console.error('❌ Broadcast Fehler:', broadcastError)
-        setError('Nachricht konnte nicht gesendet werden')
+        console.error('❌ Konnte Nachricht nicht speichern:', dbError.message)
+        setError('Nachricht konnte nicht gespeichert werden')
         return
       }
 
-      console.log('✅ Nachricht gesendet:', newMessage)
+      console.log('✅ Nachricht gespeichert:', data)
       
-      // Füge Nachricht lokal hinzu
-      setMessages((prev) => [...prev, newMessage])
+      // Keine lokale Aktualisierung nötig - postgres_changes Event wird die Nachricht hinzufügen
     } catch (err) {
       console.error('❌ Fehler beim Senden:', err)
       setError('Fehler beim Senden der Nachricht')
