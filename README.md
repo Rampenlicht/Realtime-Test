@@ -1,6 +1,6 @@
 # Realtime Test App
 
-Eine PWA zum Testen von Supabase Realtime mit Vite + React + JSX.
+Eine PWA mit User Card und Realtime Guthaben-Tracking über Supabase.
 
 ## Features
 
