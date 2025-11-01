@@ -11,7 +11,7 @@ function App() {
         </h1>
         
         <div className="grid md:grid-cols-2 gap-6">
-          <UserCard />
+        
           <BalanceCard />
         </div>
       </div>
